@@ -1,4 +1,4 @@
-import logging
+import requests, base64, logging
 from aegnix_core.envelope import Envelope
 from aegnix_core.crypto import ed25519_sign
 from aegnix_ae.transport.transport_gcp_pubsub import GcpPubSubAdapter
@@ -16,12 +16,35 @@ class AEClient:
         self.session_grant = None
 
     def register_with_abi(self):
-        """Simulate ABI handshake and obtain a short-lived session grant."""
-        log.debug(f"[{self.name}] initiating who_is_there handshake with {self.abi_url}")
-        # TODO: Replace with actual ABI request
-        self.session_grant = {"grant": "mock-grant"}
-        log.info(f"[{self.name}] registered successfully with ABI")
-        return True
+        """Perform challenge–response registration."""
+        log.debug(f"[{self.name}] initiating registration with {self.abi_url}")
+        # ae_id = self.keypair["pub"]
+        ae_id = self.name
+
+        # Step 1: Request challenge
+        res = requests.post(f"{self.abi_url}/register", json={"ae_id": ae_id})
+        if not res.ok:
+            raise Exception(f"Challenge request failed: {res.text}")
+        nonce_b64 = res.json()["nonce"]
+
+        # Step 2: Sign challenge
+        nonce = base64.b64decode(nonce_b64)
+        # sig = ed25519_sign(nonce, self.keypair["priv"])
+        sig = ed25519_sign(self.keypair["priv"], nonce)
+        sig_b64 = base64.b64encode(sig).decode()
+
+        # Step 3: Verify signature with ABI
+        verify_res = requests.post(f"{self.abi_url}/verify", json={
+            "ae_id": ae_id,
+            "signed_nonce_b64": sig_b64
+        })
+        if not verify_res.ok:
+            raise Exception(f"Verification failed: {verify_res.text}")
+
+        data = verify_res.json()
+        log.info(f"[{self.name}] verification result: {data}")
+        self.session_grant = data if data.get("verified") else None
+        return bool(self.session_grant)
 
     def emit(self, subject, payload, labels=None):
         """Emit signed message to swarm."""
