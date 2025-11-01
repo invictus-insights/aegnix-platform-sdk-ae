@@ -1,17 +1,17 @@
-import requests, base64, logging
+import requests, base64, logging, os
 from aegnix_core.envelope import Envelope
 from aegnix_core.crypto import ed25519_sign
-from aegnix_ae.transport.transport_gcp_pubsub import GcpPubSubAdapter
+from aegnix_ae.transport import transport_factory
 from aegnix_ae.decorators import EventRegistry
 
 log = logging.getLogger(__name__)
 
 class AEClient:
-    def __init__(self, name, abi_url, keypair, transport=None):
+    def __init__(self, name, abi_url=None, keypair=None, transport=None):
         self.name = name
-        self.abi_url = abi_url
+        self.abi_url = abi_url or os.getenv("ABI_URL", "http://localhost:8080")
         self.keypair = keypair
-        self.transport = transport or GcpPubSubAdapter()
+        self.transport = transport or transport_factory()
         self.registry = EventRegistry()
         self.session_grant = None
 
