@@ -33,7 +33,8 @@ class AEClient:
             key_id=self.keypair["pub"]
         )
         env.sig = ed25519_sign(env.to_bytes(), self.keypair["priv"])
-        self.transport.publish(subject, env.to_json())
+        # self.transport.publish(subject, env.to_json())
+        self.transport.publish(subject, env.to_dict())
         log.debug(f"[{self.name}] emitted message on subject '{subject}'")
 
     def listen(self):
