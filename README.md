@@ -105,7 +105,7 @@ All tests passing confirms a full local handshake and signed envelope emission u
 
 ---
 
-## 📍 Next Steps
+## Next Steps
 
 **Phase 2** — Extend transports (GCP Pub/Sub → Kafka → NATS)
 **Phase 3** — Integrate distributed policy enforcement and live ABI verification
