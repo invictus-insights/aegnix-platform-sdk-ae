@@ -21,10 +21,18 @@ class AEClient:
         self.name = name
         self.abi_url = abi_url or os.getenv("ABI_URL", "http://localhost:8080")
         self.keypair = keypair
-        self.transport = transport or transport_factory()
+        # self.transport = transport or transport_factory()
         self.registry = EventRegistry()
         self.session_grant = None
 
+        if isinstance(transport, str):
+            os.environ["AE_TRANSPORT"] = transport  # so factory picks it up
+            self.transport = transport_factory()
+
+        else:
+            self.transport = transport or transport_factory()
+
+        # Ensure pub_b64 convenience key
         self.keypair.setdefault("pub_b64", self.keypair.get("pub"))
 
     # ------------------------------------------------------------------
@@ -47,12 +55,7 @@ class AEClient:
 
         # sig = ed25519_sign(nonce, self.keypair["priv"])
         sig = ed25519_sign(self.keypair["priv"], nonce)
-
         sig_b64 = base64.b64encode(sig).decode()
-
-        # nonce = base64.b64decode(nonce_b64)
-        # sig = ed25519_sign(nonce, self.keypair["priv"])
-        # sig_b64 = base64.b64encode(sig).decode()
 
         # Step 3: Verify signature with ABI
         verify_res = requests.post(f"{self.abi_url}/verify", json={
@@ -64,8 +67,24 @@ class AEClient:
 
         data = verify_res.json()
         log.info(f"[{self.name}] verification result: {data}")
-        self.session_grant = data if data.get("verified") else None
-        return bool(self.session_grant)
+
+        # Step 4: Capture grant
+        verified = data.get("verified")
+        grant = data.get("grant")
+
+        if verified and grant:
+            self.session_grant = grant
+            os.environ["AE_GRANT"] = grant
+            return True
+
+        # if data.get("verified") and data.get("grant"):
+        #     self.session_grant = data["grant"]
+        #     # surface to HTTPAdapter via env for now (simple)
+        #     os.environ["AE_GRANT"] = self.session_grant
+        #     return True
+        return False
+        # self.session_grant = data if data.get("verified") else None
+        # return bool(self.session_grant)
 
     # ------------------------------------------------------------------
     # Message Emission
