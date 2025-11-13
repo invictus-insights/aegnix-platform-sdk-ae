@@ -1,118 +1,129 @@
 # AEGNIX AE SDK
 
-Atomic Expert (AE) Software Development Kit 
-This SDK allows individual Atomic Experts to register with an ABI service, emit signed messages, and communicate through pluggable transports (local, GCP Pub/Sub, etc.).
+The **AEGNIX AE SDK** empowers developers to create autonomous Atomic Experts (AEs) — micro-agents capable of reasoning, emitting signed intelligence, and participating securely within the AEGNIX swarm mesh (“the war”).
 
+Each AE can self-register with an Agent Bridge Interface (ABI), authenticate via a dual-crypto handshake, and communicate through modular transports (Local / GCP Pub/Sub / Kafka). 
+It serves as the agentic runtime layer for the AEGNIX ecosystem enabling trusted, verifiable collaboration among distributed AEs operating across tactical, enterprise, or defense domains.
 ---
 
 ## Overview
 
-The **AE SDK** provides a lightweight client interface (`AEClient`) and transport adapters for message emission, subscription, and trust validation through the ABI handshake.
-
-### Core Features
-
-* **AEClient** — Register with ABI, emit signed envelopes, and subscribe to topics.
-* **Envelope** — Shared message format (imported from `aegnix_core`).
-* **LocalAdapter** — In-memory Pub/Sub adapter for offline and unit testing.
-* **Mocked crypto** — For local test runs, real signing can be replaced with a mock signature.
+| Component              | Description                                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **AEClient**           | Handles registration (`who_is_there` handshake), signed emissions, and topic subscriptions.                        |
+| **Envelope**           | Shared signed message format from `aegnix_core`.                                                                   |
+| **Transport Adapters** | Pluggable backends: `LocalAdapter` for offline tests, `PubSubAdapter` (coming Phase 3F), `KafkaAdapter` (Phase 4). |
+| **Mock Crypto**        | Enables deterministic unit testing without real keys.                                                              |
 
 ---
 
-## Directory Structure
+## 🧬 Directory Structure
 
 ```
 aegnix_sdk/
-├── aegnix_ae/
-│   ├── __init__.py
-│   ├── client.py
-│   └── transport/
-│       ├── __init__.py
-│       ├── transport_local.py
-│       └── transport_base.py
-└── tests/
-    ├── test_ae_sdk.py
-    └── test_abi_sdk.py
+    ├── aegnix_ae
+    ├── README.md
+    ├── __init__.py
+    ├── client.py
+    ├── decorators.py
+    ├── make_keypair.py
+    ├── pyproject.toml
+    └── transport
+        ├── __init__.py
+        ├── transport_base.py
+        ├── transport_gcp_pubsub.py
+        ├── transport_http.py
+        ├── transport_kafka.py
+        └── transport_local.py
+    
 ```
 
 ---
 
 ## Installation
 
-> Ensure the `aegnix_core` package is installed in **editable** mode first:
+Install the **core** dependency:
 
 ```bash
 cd ../aegnix_core
 pip install -e .
 ```
 
-Then install the AE SDK:
+ Install the **AE SDK** in editable mode:
 
 ```bash
-cd ../aegnix_sdk
+cd ../aegnix_sdk/aegnix_ae
 pip install -e .
 ```
 
-This enables local editing and development across both packages.
+ Verify installation:
+
+```bash
+pip list | grep aegnix
+# aegnix-core 0.3.6
+# aegnix-sdk  0.3.6
+```
 
 ---
 
 ## Running Tests
 
-Run all AE + ABI SDK integration tests with debug logging:
+Run all AE + ABI SDK integration tests with full logs:
 
 ```bash
-pytest -v -s --log-cli-level=DEBUG
-```
-
-Expected output for AE SDK test (`test_ae_register_and_emit`):
+pytest -v -s --log-cli-level=DEBUG tests/test_ae_sdk.py 
 
 ```
-INFO     aegnix_ae.transport.transport_local: [LOCAL SUB] Subscribed to fusion.topic
-DEBUG    aegnix_ae.client: [fusion_ae] initiating who_is_there handshake with http://localhost:8080
-INFO     aegnix_ae.client: [fusion_ae] registered successfully with ABI
-INFO     aegnix_ae.transport.transport_local: [LOCAL PUB] fusion.topic: {"track_id": "ABC123"}...
-INFO     root: [HANDLER] Received: {"track_id": "ABC123"}
-DEBUG    aegnix_ae.client: [fusion_ae] emitted message on subject 'fusion.topic'
-PASSED
+
+Expected output (Phase 3E stable):
+
+```
+tests/test_ae_sdk.py .....                                                                                 [100%]
 ```
 
-All tests passing confirms a full local handshake and signed envelope emission using the **LocalAdapter**.
+Confirms successful handshake, signed envelope emission, and message loopback via LocalAdapter.
+
+> `/emit` JWT verification tests will arrive in Phase 3F.
 
 ---
 
 ## How It Works
 
-1. **AEClient.register_with_abi()** simulates the ABI dual-crypto handshake.
-2. **AEClient.emit()** creates a signed `Envelope` and publishes via the transport.
-3. **LocalAdapter** routes the message in-memory, invoking any subscribed handlers.
+1. **AEClient.register_with_abi()** performs the dual-crypto admission handshake.
+2. **AEClient.emit()** signs an `Envelope` and sends via the selected transport.
+3. **LocalAdapter** delivers in-memory for fast dev + CI testing.
+4. **Policy + Audit** enforcement handled by ABI Service.
 
 ---
 
 ## Developer Notes
 
-* Local transport is used for offline testing — no Google Cloud credentials required.
-* Real-world deployment will use `transport_gcp_pubsub.py` (GCP) or `transport_kafka.py`.
-* The signing process uses `aegnix_core.crypto.ed25519_sign`; in tests it’s monkeypatched to a mock.
+* Default transport → `LocalAdapter` (offline-safe).
+* Real deployments → `transport_gcp_pubsub.py` → `transport_kafka.py`.
+* Uses `aegnix_core.crypto.ed25519_sign`; tests monkeypatch mock signing.
+* Works seamlessly with **ABI Service v0.3.6** (Phase 3E “All Green”).
 
 ---
 
-## Phase 1 Definition of Done
+## Definition of Done (Phase 3E)
 
-* Two toy AEs exchange a signed message through local transport.
-* ABI SDK successfully admits/denies and persists keyring in SQLite.
-* Signed audit records are produced.
-* Tests fully pass under `pytest -v -s --log-cli-level=DEBUG`.
+* [x] AEClient registration and emit via LocalAdapter
+* [x] End-to-end ABI handshake verified
+* [x] Signed Envelope schema stable
+* [x] Integration tests (AE ↔ ABI) passing
+* [ ] JWT grant + `/emit` verification (Phase 3F)
 
 ---
 
 ## Next Steps
 
-**Phase 2** — Extend transports (GCP Pub/Sub → Kafka → NATS)
-**Phase 3** — Integrate distributed policy enforcement and live ABI verification
+**Phase 3F** — JWT issuance + verified `/emit` pipeline
+**Phase 4** — Kafka adapter + distributed policy replication
+**Phase 5** — Multi-AE swarms / UIX integration / confidence loops
 
 ---
 
 **Repository:** `github.com/invictus-insights/aegnix_ae_sdk`
 **Author:** Invictus Insights R&D
-**Version:** 0.1.0
-**License:** Proprietary (pending patent filing)
+**Version:** 0.3.6 (Phase 3E All Green)
+**License:** Proprietary / Pending Patent Filing
