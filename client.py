@@ -74,7 +74,9 @@ class AEClient:
 
         if verified and grant:
             self.session_grant = grant
-            os.environ["AE_GRANT"] = grant
+            # os.environ["AE_GRANT"] = grant
+            if hasattr(self.transport, "set_grant"):
+                self.transport.set_grant(grant)
             return True
 
         # if data.get("verified") and data.get("grant"):
