@@ -79,14 +79,7 @@ class AEClient:
                 self.transport.set_grant(grant)
             return True
 
-        # if data.get("verified") and data.get("grant"):
-        #     self.session_grant = data["grant"]
-        #     # surface to HTTPAdapter via env for now (simple)
-        #     os.environ["AE_GRANT"] = self.session_grant
-        #     return True
         return False
-        # self.session_grant = data if data.get("verified") else None
-        # return bool(self.session_grant)
 
     # ------------------------------------------------------------------
     # Message Emission
