@@ -8,31 +8,86 @@ log = logging.getLogger(__name__)
 
 class AEClient:
     """
-      AEClient
-      --------
-      Atomic Expert client for secure registration and message emission
-      within the AEGNIX mesh.
+    AEClient
+    ========
 
-      • Uses Ed25519 for challenge–response and envelope signing.
-      • Maintains transport abstraction (HTTP, Pub/Sub, Local).
-      • All signing follows canonical order: ed25519_sign(priv_raw, data).
-      """
-    def __init__(self, name, abi_url=None, keypair=None, transport=None):
+    High-level client for building and running Agent Experts (AEs)
+    within the AEGNIX distributed mesh.
+
+    This class provides:
+
+      • Ed25519 challenge-response registration with ABI
+      • Automatic JWT session grant handling
+      • Optional capability declaration (publish/subscribe sets)
+      • Canonical envelope creation and signing
+      • Transport abstraction (HTTP, Pub/Sub, Local)
+      • Simple handler registry for inbound events
+
+    Parameters
+    ----------
+    name : str
+        Unique AE identifier. Becomes the "producer" field for emitted events.
+    abi_url : str, optional
+        Base URL of the ABI service. Defaults to environment variable
+        ``ABI_URL`` or ``http://localhost:8080``.
+    keypair : dict
+        Must contain ``pub`` and ``priv`` keys (raw or base64).
+        Optionally may include:
+            • ``pub_b64``  – convenience cached base64 of pub
+    transport : str or Transport instance, optional
+        Transport layer used for publish/subscribe.
+        If a string is passed, it is forwarded to ``AE_TRANSPORT`` and a
+        transport is resolved via `transport_factory()`.
+    publishes : list[str], optional
+        Subjects this AE intends to emit. If provided, these are automatically
+        declared to ABI after successful registration.
+    subscribes : list[str], optional
+        Subjects this AE intends to subscribe to. Also declared automatically.
+
+    Attributes
+    ----------
+    session_grant : str or None
+        JWT issued by ABI after challenge–response registration.
+    registry : EventRegistry
+        Registry of event handlers for inbound subjects.
+    transport : Transport
+        Resolved transport instance used for publish/subscribe.
+
+    Usage Example
+    -------------
+    >>> keypair = {"pub": "...", "priv": "..."}
+    >>> ae = AEClient(
+    ...     name="fusion_ae",
+    ...     keypair=keypair,
+    ...     publishes=["fusion.emit"],
+    ...     subscribes=["roe.result"]
+    ... )
+    >>> ae.register_with_abi()
+    True
+    >>> ae.emit("fusion.emit", {"value": 42})
+    """
+    def __init__(self, name, abi_url=None, keypair=None, transport=None, publishes=None, subscribes=None):
         self.name = name
         self.abi_url = abi_url or os.getenv("ABI_URL", "http://localhost:8080")
         self.keypair = keypair
-        # self.transport = transport or transport_factory()
         self.registry = EventRegistry()
         self.session_grant = None
+        self.publishes = publishes or []
+        self.subscribes = subscribes or []
 
+        # --- Keypair validation
+        if not self.keypair or "pub" not in self.keypair or "priv" not in self.keypair:
+            raise ValueError("AEClient requires keypair containing 'pub' and 'priv'")
+
+        # --- Transport selection ---
         if isinstance(transport, str):
-            os.environ["AE_TRANSPORT"] = transport  # so factory picks it up
+            os.environ["AE_TRANSPORT"] = transport
             self.transport = transport_factory()
 
         else:
             self.transport = transport or transport_factory()
 
-        # Ensure pub_b64 convenience key
+        # --- Ensure pub_b64 convenience key ---
         self.keypair.setdefault("pub_b64", self.keypair.get("pub"))
 
     # ------------------------------------------------------------------
@@ -77,6 +132,9 @@ class AEClient:
             # os.environ["AE_GRANT"] = grant
             if hasattr(self.transport, "set_grant"):
                 self.transport.set_grant(grant)
+
+            if self.publishes or self.subscribes:
+                self.declare_capabilities(self.publishes, self.subscribes)
             return True
 
         return False
@@ -110,3 +168,57 @@ class AEClient:
         log.info(f"[{self.name}] listening for subscribed subjects…")
         for subject, handler in self.registry.handlers.items():
             self.transport.subscribe(subject, handler)
+
+    # ------------------------------------------------------------
+    # Capability Declaration
+    # ------------------------------------------------------------
+    def declare_capabilities(self, publishes=None, subscribes=None, meta=None):
+        """
+        Declare AE capabilities to ABI.
+
+        Requires:
+            - successful registration
+            - session_grant containing valid JWT
+
+        Args:
+            publishes: list of subjects the AE wants to emit
+            subscribes: list of subjects the AE wants to listen to
+            meta: optional metadata for ABI or tooling
+
+        Returns:
+            dict: ABI response {status, ae_id, capability}
+        """
+        if not self.session_grant:
+            raise Exception("AE must register_with_abi() before declaring capabilities")
+
+        publishes = publishes or []
+        subscribes = subscribes or []
+        meta = meta or {}
+
+        headers = {
+            "Authorization": f"Bearer {self.session_grant}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "publishes": publishes,
+            "subscribes": subscribes,
+            "meta": meta
+        }
+
+        url = f"{self.abi_url}/ae/capabilities"
+        res = requests.post(url, json=payload, headers=headers)
+
+        if not res.ok:
+            raise Exception(
+                f"Capability declaration failed ({res.status_code}): {res.text}"
+            )
+
+        data = res.json()
+        log.info({
+            "event": "capabilities_declared",
+            "publishes": publishes,
+            "subscribes": subscribes
+        })
+
+        return data
