@@ -1,7 +1,7 @@
 import requests, base64, logging, os
 from aegnix_core.envelope import Envelope
 from aegnix_core.crypto import ed25519_sign, sign_envelope
-from aegnix_ae.transport import transport_factory
+from aegnix_core.transport import transport_factory
 from aegnix_ae.decorators import EventRegistry
 
 log = logging.getLogger(__name__)
@@ -82,10 +82,16 @@ class AEClient:
         # --- Transport selection ---
         if isinstance(transport, str):
             os.environ["AE_TRANSPORT"] = transport
+
+            os.environ["ABI_URL"] = self.abi_url
+
             self.transport = transport_factory()
 
         else:
             self.transport = transport or transport_factory()
+
+        if hasattr(self.transport, "base_url"):
+            self.transport.base_url = self.abi_url.rstrip("/")
 
         # --- Ensure pub_b64 convenience key ---
         self.keypair.setdefault("pub_b64", self.keypair.get("pub"))
@@ -168,6 +174,16 @@ class AEClient:
         log.info(f"[{self.name}] listening for subscribed subjects…")
         for subject, handler in self.registry.handlers.items():
             self.transport.subscribe(subject, handler)
+
+    # ------------------------------------------------------------
+    # Shorthand handler registration
+    # ------------------------------------------------------------
+    def on(self, subject):
+        """
+        Convenience alias so AE code can use @ae.on("<subject>")
+        instead of @ae.registry.on("<subject>").
+        """
+        return self.registry.on(subject)
 
     # ------------------------------------------------------------
     # Capability Declaration
