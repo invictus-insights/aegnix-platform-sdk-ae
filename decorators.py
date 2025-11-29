@@ -1,3 +1,4 @@
+# decorators.py
 class EventRegistry:
     def __init__(self):
         self.handlers = {}

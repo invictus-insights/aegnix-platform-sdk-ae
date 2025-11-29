@@ -1,3 +1,4 @@
+# __init__.py
 """
 AEGNIX AE SDK
 ----------------
@@ -10,4 +11,4 @@ This package provides:
   • Local and distributed event handling
 """
 
-__version__ = "0.9.0-phase-3g"
+__version__ = "0.9.2-phase-3g"

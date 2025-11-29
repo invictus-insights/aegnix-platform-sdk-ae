@@ -1,3 +1,4 @@
+# client.py
 import requests, base64, logging, os
 from aegnix_core.envelope import Envelope
 from aegnix_core.crypto import ed25519_sign, sign_envelope
