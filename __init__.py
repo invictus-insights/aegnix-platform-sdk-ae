@@ -11,4 +11,7 @@ This package provides:
   • Local and distributed event handling
 """
 
-__version__ = "0.9.2-phase-3g"
+from .client_v2 import AEClient
+
+__all__ = ["AEClient"]
+__version__ = "0.9.2-phase-4b"
