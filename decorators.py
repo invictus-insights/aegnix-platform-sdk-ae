@@ -5,9 +5,11 @@ class EventRegistry:
 
     def on(self, subject):
         """Decorator to register subject handlers."""
+
         def decorator(fn):
             self.handlers[subject] = fn
             return fn
+
         return decorator
 
     def register(self, subject, fn):

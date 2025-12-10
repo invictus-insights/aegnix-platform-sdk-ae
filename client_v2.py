@@ -1,15 +1,15 @@
 # aegnix_ae/client_v2.py
-import os
-import time
-import base64
 import logging
-from typing import Optional, List, Dict, Any, Callable
+import os
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
-
+from aegnix_core.crypto import (compute_pubkey_fingerprint, ed25519_sign,
+                                sign_envelope, derive_ed25519_pub)
 from aegnix_core.envelope import Envelope
-from aegnix_core.crypto import ed25519_sign, sign_envelope
 from aegnix_core.transport import transport_factory
+from aegnix_core.utils import b64d, b64e
+
 from aegnix_ae.decorators import EventRegistry
 from aegnix_ae.session import SessionState, SessionStore
 
@@ -18,16 +18,19 @@ log = logging.getLogger(__name__)
 
 class AEClientError(Exception):
     """Base AEClient error."""
+
     pass
 
 
 class RegistrationError(AEClientError):
     """Raised when challenge/verify fails."""
+
     pass
 
 
 class SessionError(AEClientError):
     """Raised when session/refresh operations fail."""
+
     pass
 
 
@@ -89,7 +92,9 @@ class AEClient:
         auto_persist: bool = True,
     ):
         self.name = name
-        self.abi_url = abi_url or os.getenv("ABI_URL", "http://localhost:8080").rstrip("/")
+        self.abi_url = abi_url or os.getenv("ABI_URL", "http://localhost:8080").rstrip(
+            "/"
+        )
         self.keypair = keypair or {}
         self.registry = EventRegistry()
 
@@ -127,28 +132,54 @@ class AEClient:
     # Keypair normalization
     # ------------------------------------------------------------------
     def _validate_and_normalize_keypair(self) -> None:
-        if "pub" not in self.keypair or "priv" not in self.keypair:
-            raise ValueError("AEClient requires keypair containing 'pub' and 'priv'")
+        if "priv" not in self.keypair:
+            raise ValueError("AEClient requires keypair containing 'priv'")
 
         # Normalize priv key to raw bytes
         priv = self.keypair["priv"]
         if isinstance(priv, str):
             try:
-                # assume base64
-                priv = base64.b64decode(priv)
+                priv = b64d(priv)
             except Exception:
-                # if not base64, treat as raw utf-8
                 priv = priv.encode("utf-8")
         self.keypair["priv"] = priv
 
-        # Normalize pub key to base64 string (for key_id, metadata)
-        pub = self.keypair["pub"]
-        if isinstance(pub, bytes):
-            pub_b64 = base64.b64encode(pub).decode()
-        else:
-            # assume pub already base64 string
-            pub_b64 = pub
+        # Try to get or derive pubkey
+        pub_b64 = self.keypair.get("pub")
+        if pub_b64 is None:
+            # derive from priv (you may already have a helper for this;
+            # if not, we add one in aegnix_core.crypto)
+             # <- add this helper
+            pub_raw = derive_ed25519_pub(priv)
+            pub_b64 = b64e(pub_raw)
+        elif isinstance(pub_b64, bytes):
+            pub_b64 = b64e(pub_b64)
+
         self.keypair["pub_b64"] = pub_b64
+
+    # def _validate_and_normalize_keypair(self) -> None:
+    #     if "pub" not in self.keypair or "priv" not in self.keypair:
+    #         raise ValueError("AEClient requires keypair containing 'pub' and 'priv'")
+    #
+    #     # Normalize priv key to raw bytes
+    #     priv = self.keypair["priv"]
+    #     if isinstance(priv, str):
+    #         try:
+    #             # assume base64
+    #             priv = b64d(priv)
+    #         except Exception:
+    #             # if not base64, treat as raw utf-8
+    #             priv = priv.encode("utf-8")
+    #     self.keypair["priv"] = priv
+    #
+    #     # Normalize pub key to base64 string (for key_id, metadata)
+    #     pub = self.keypair["pub"]
+    #     if isinstance(pub, bytes):
+    #         pub_b64 = b64e(pub)
+    #     else:
+    #         # assume pub already base64 string
+    #         pub_b64 = pub
+    #     self.keypair["pub_b64"] = pub_b64
 
     # ------------------------------------------------------------------
     # Session helpers
@@ -189,14 +220,16 @@ class AEClient:
         # 1) Request challenge
         r = requests.post(f"{self.abi_url}/register", json={"ae_id": ae_id})
         if not r.ok:
-            raise RegistrationError(f"Challenge request failed: {r.status_code} {r.text}")
+            raise RegistrationError(
+                f"Challenge request failed: {r.status_code} {r.text}"
+            )
         payload = r.json()
         nonce_b64 = payload["nonce"]
-        nonce = base64.b64decode(nonce_b64)
+        nonce = b64d(nonce_b64)
 
         # 2) Sign challenge (Ed25519)
         sig = ed25519_sign(self.keypair["priv"], nonce)
-        sig_b64 = base64.b64encode(sig).decode()
+        sig_b64 = b64e(sig)
 
         # 3) Verify with ABI
         vr = requests.post(
@@ -239,7 +272,9 @@ class AEClient:
         ae_id = self.name
         sess = self.session_store.load()
         if not sess:
-            log.info(f"[{ae_id}] No existing session on disk; performing fresh registration")
+            log.info(
+                f"[{ae_id}] No existing session on disk; performing fresh registration"
+            )
             return self.register_with_abi()
 
         self.session = sess
@@ -262,7 +297,9 @@ class AEClient:
             self.refresh_session()
             return True
         except Exception as e:
-            log.warning(f"[{ae_id}] Failed to refresh existing session; re-registering: {e}")
+            log.warning(
+                f"[{ae_id}] Failed to refresh existing session; re-registering: {e}"
+            )
             return self.register_with_abi()
 
     def refresh_session(self) -> None:
@@ -325,7 +362,9 @@ class AEClient:
     # ------------------------------------------------------------------
     # Emit
     # ------------------------------------------------------------------
-    def emit(self, subject: str, payload: Dict[str, Any], labels: Optional[List[str]] = None) -> None:
+    def emit(
+        self, subject: str, payload: Dict[str, Any], labels: Optional[List[str]] = None
+    ) -> None:
         """
         Emit a signed envelope via the configured transport.
 
@@ -337,12 +376,15 @@ class AEClient:
         # Ensure session/access token is good (if your transport needs it)
         self._ensure_access_token()
 
+        key_id = compute_pubkey_fingerprint(self.keypair["pub_b64"])
+
         env = Envelope.make(
             producer=self.name,
             subject=subject,
             payload=payload,
             labels=labels or ["default"],
-            key_id=self.keypair["pub_b64"],
+            # key_id=self.keypair["pub_b64"],
+            key_id=key_id,
         )
         env = sign_envelope(env, self.keypair["priv"], env.key_id)
         self.transport.publish(subject, env.to_dict())
@@ -385,7 +427,9 @@ class AEClient:
         self._ensure_access_token()
         for subject, handler in self.registry.handlers.items():
             self.transport.subscribe(subject, handler)
-        log.info(f"[{self.name}] listening for subscribed subjects: {list(self.registry.handlers.keys())}")
+        log.info(
+            f"[{self.name}] listening for subscribed subjects: {list(self.registry.handlers.keys())}"
+        )
 
     # ------------------------------------------------------------------
     # Capabilities
@@ -426,7 +470,9 @@ class AEClient:
         url = f"{self.abi_url}/ae/capabilities"
         r = requests.post(url, json=payload, headers=headers)
         if not r.ok:
-            raise AEClientError(f"Capability declaration failed: {r.status_code} {r.text}")
+            raise AEClientError(
+                f"Capability declaration failed: {r.status_code} {r.text}"
+            )
 
         resp = r.json()
         log.info(

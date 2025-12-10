@@ -1,11 +1,17 @@
 # client.py
-import requests, base64, logging, os
-from aegnix_core.envelope import Envelope
+import logging
+import os
+
+import requests
 from aegnix_core.crypto import ed25519_sign, sign_envelope
+from aegnix_core.envelope import Envelope
 from aegnix_core.transport import transport_factory
+from aegnix_core.utils import b64d, b64e
+
 from aegnix_ae.decorators import EventRegistry
 
 log = logging.getLogger(__name__)
+
 
 class AEClient:
     """
@@ -67,7 +73,16 @@ class AEClient:
     True
     >>> ae.emit("fusion.emit", {"value": 42})
     """
-    def __init__(self, name, abi_url=None, keypair=None, transport=None, publishes=None, subscribes=None):
+
+    def __init__(
+        self,
+        name,
+        abi_url=None,
+        keypair=None,
+        transport=None,
+        publishes=None,
+        subscribes=None,
+    ):
         self.name = name
         self.abi_url = abi_url or os.getenv("ABI_URL", "http://localhost:8080")
         self.keypair = keypair
@@ -111,19 +126,18 @@ class AEClient:
             raise Exception(f"Challenge request failed: {res.text}")
         # nonce_b64 = res.json()["nonce"]
         nonce_b64 = res.json()["nonce"]
-        nonce = base64.b64decode(nonce_b64)
+        nonce = b64d(nonce_b64)
 
         # Step 2: Sign challenge
 
         # sig = ed25519_sign(nonce, self.keypair["priv"])
         sig = ed25519_sign(self.keypair["priv"], nonce)
-        sig_b64 = base64.b64encode(sig).decode()
+        sig_b64 = b64e(sig).decode()
 
         # Step 3: Verify signature with ABI
-        verify_res = requests.post(f"{self.abi_url}/verify", json={
-            "ae_id": ae_id,
-            "signed_nonce_b64": sig_b64
-        })
+        verify_res = requests.post(
+            f"{self.abi_url}/verify", json={"ae_id": ae_id, "signed_nonce_b64": sig_b64}
+        )
         if not verify_res.ok:
             raise Exception(f"Verification failed: {verify_res.text}")
 
@@ -156,7 +170,7 @@ class AEClient:
             subject=subject,
             payload=payload,
             labels=labels or ["default"],
-            key_id=self.keypair["pub"]
+            key_id=self.keypair["pub"],
         )
         # Canonical signing helper
         env = sign_envelope(env, self.keypair["priv"], env.key_id)
@@ -214,14 +228,10 @@ class AEClient:
 
         headers = {
             "Authorization": f"Bearer {self.session_grant}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
-        payload = {
-            "publishes": publishes,
-            "subscribes": subscribes,
-            "meta": meta
-        }
+        payload = {"publishes": publishes, "subscribes": subscribes, "meta": meta}
 
         url = f"{self.abi_url}/ae/capabilities"
         res = requests.post(url, json=payload, headers=headers)
@@ -232,10 +242,12 @@ class AEClient:
             )
 
         data = res.json()
-        log.info({
-            "event": "capabilities_declared",
-            "publishes": publishes,
-            "subscribes": subscribes
-        })
+        log.info(
+            {
+                "event": "capabilities_declared",
+                "publishes": publishes,
+                "subscribes": subscribes,
+            }
+        )
 
         return data

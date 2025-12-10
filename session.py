@@ -1,10 +1,10 @@
 # aegnix_ae/session.py
 import json
-import time
 import logging
-from dataclasses import dataclass, asdict
+import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +24,7 @@ class SessionState:
           "refresh_expires_in": 86400
         }
     """
+
     ae_id: str
     session_id: str
     access_token: str
@@ -44,7 +45,9 @@ class SessionState:
         )
 
     @classmethod
-    def from_refresh_response(cls, ae_id: str, session_id: str, data: Dict[str, Any]) -> "SessionState":
+    def from_refresh_response(
+        cls, ae_id: str, session_id: str, data: Dict[str, Any]
+    ) -> "SessionState":
         now = int(time.time())
         return cls(
             ae_id=ae_id,
